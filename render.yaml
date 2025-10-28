@@ -3,7 +3,7 @@ services:
     name: facebook-reaction-tool
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn --worker-tmp-dir /dev/shm main:app
+    startCommand: gunicorn --worker-tmp-dir /dev/shm main.py
 
     envVars:
       - key: PORT
