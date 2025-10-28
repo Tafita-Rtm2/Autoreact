@@ -4,9 +4,18 @@ import requests
 from bs4 import BeautifulSoup
 import os
 from typing import Optional, Dict, Any
+import logging
 
 app = Flask(__name__)
 CORS(app)
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+handler = logging.StreamHandler()
+handler.setFormatter(formatter)
+app.logger.addHandler(handler)
+app.logger.setLevel(logging.INFO)
 
 PORT = int(os.environ.get('PORT', 4000))
 
@@ -66,8 +75,11 @@ def fetch_metadata(url: str) -> Optional[Dict[str, Any]]:
             'image': og_image.get('content') if og_image else None,
             'postContent': post_content.text[:300].strip() if post_content else ""
         }
+    except requests.exceptions.RequestException as e:
+        app.logger.error(f"Failed to fetch metadata for {url}: {str(e)}")
+        return None
     except Exception as e:
-        print(f"Failed to fetch metadata for {url}: {str(e)}")
+        app.logger.error(f"An unexpected error occurred in fetch_metadata for {url}: {str(e)}")
         return None
 
 @app.route('/')
@@ -88,7 +100,7 @@ def preview():
         
         return jsonify(metadata)
     except Exception as e:
-        print(f'Error in preview route: {str(e)}')
+        app.logger.error(f'Error in preview route: {str(e)}')
         return jsonify({
             'error': "An unexpected error occurred while processing the link.",
             'details': str(e)
@@ -116,22 +128,24 @@ def react():
     }
     
     try:
-        print(f"Sending request to {url} with payload:", {
-            **payload,
-            'cookie': '[REDACTED]' if payload['cookie'] else 'N/A'
-        })
+        app.logger.info(f"Sending request to {url} with payload: {{'reaction': '{payload['reaction']}', 'link': '{payload['link']}', 'version': '{payload['version']}', 'cookie': '[REDACTED]'}}")
         
         response = requests.post(url, json=payload, headers=headers, timeout=15)
         response.raise_for_status()
         
-        print("Received response:", response.json())
+        app.logger.info(f"Received response: {response.json()}")
         return jsonify(response.json())
     except requests.exceptions.RequestException as e:
-        print(f"Error during request: {str(e)}")
+        app.logger.error(f"Error during request: {str(e)}")
         
-        if hasattr(e, 'response'):
+        if e.response is not None:
+            try:
+                error_json = e.response.json()
+            except ValueError:
+                error_json = {'error': e.response.text}
+
             return jsonify({
-                'error': e.response.json(),
+                'error': error_json,
                 'statusCode': e.response.status_code
             }), e.response.status_code
         
@@ -141,5 +155,6 @@ def react():
         }), 500
 
 if __name__ == '__main__':
-    print(f"Server is running on http://localhost:{PORT}")
+    # This block is not executed when running with Gunicorn
+    app.logger.info(f"Server is running on http://localhost:{PORT}")
     app.run(host='0.0.0.0', port=PORT, debug=True)
